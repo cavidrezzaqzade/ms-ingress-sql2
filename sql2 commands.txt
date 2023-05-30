@@ -1,0 +1,224 @@
+CREATE DATABASE my_db;
+
+CREATE TABLE employees (
+   id INT PRIMARY KEY,
+   name VARCHAR(50),
+   age INT,
+   department VARCHAR(50)
+);
+
+INSERT INTO employees (id, age, name, department)
+VALUES (1, 28, 'Javid', 'dep1'),
+       (2, 25, 'Hatəm', 'dep2'),
+       (3, 24, 'Javad', 'dep3'),
+       (4, 26, 'Azer', 'dep4');
+
+--      TCL      --------------------------
+SELECT *
+FROM employees;
+
+START TRANSACTION;
+SAVEPOINT before_delete;
+DELETE FROM employees where id = 4;
+SAVEPOINT after_delete;
+ROLLBACK TO before_delete;
+END TRANSACTION;
+
+SELECT *
+FROM employees;
+
+--      Primary key      --------------------------
+CREATE TABLE users (
+   id SERIAL PRIMARY KEY,
+   name VARCHAR(50),
+   email VARCHAR(100)
+);
+
+INSERT INTO users (name, email)
+VALUES ('Javid', '@'),
+       ('Hatəm', '@'),
+       ('Javad', '@'),
+       ('Azer', '@');
+
+SELECT *
+FROM users;
+
+--      Relations      --------------------------
+-- One-to-One Relationship:
+CREATE TABLE Persons (
+    employee_id SERIAL PRIMARY KEY,
+    employee_name VARCHAR(100)
+);
+
+CREATE TABLE PersonDetails (
+    details_id SERIAL PRIMARY KEY,
+    employee_id INTEGER REFERENCES Persons(employee_id),
+    phone_number VARCHAR(20)
+);
+
+-- One-to-Many Relationship:
+CREATE TABLE Students (
+    student_id SERIAL PRIMARY KEY,
+    student_name VARCHAR(100)
+);
+
+CREATE TABLE Courses (
+    course_id SERIAL PRIMARY KEY,
+    course_name VARCHAR(100),
+    student_id INTEGER REFERENCES Students(student_id)
+);
+
+-- Many-to-Many Relationship:
+CREATE TABLE Songs (
+    song_id SERIAL PRIMARY KEY,
+    song_title VARCHAR(100)
+);
+
+CREATE TABLE Playlists (
+    playlist_id SERIAL PRIMARY KEY,
+    playlist_name VARCHAR(100)
+);
+
+CREATE TABLE SongPlaylists (
+    song_id INTEGER REFERENCES Songs(song_id),
+    playlist_id INTEGER REFERENCES Playlists(playlist_id),
+    PRIMARY KEY (song_id, playlist_id)
+);
+
+--      Trigger      --------------------------
+CREATE FUNCTION validate_age()
+    RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.age < 0 THEN
+        RAISE EXCEPTION 'Age cannot be negative';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER age_check
+    BEFORE INSERT OR UPDATE ON employees
+    FOR EACH ROW
+EXECUTE FUNCTION validate_age();
+
+INSERT INTO employees (name, age, department)
+VALUES ('David', -5, 'dep5'); /* gives an error */
+
+--      Joins      --------------------------
+CREATE TABLE Customers (
+    customer_id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    email VARCHAR(100),
+    address VARCHAR(255)
+);
+
+CREATE TABLE Orders (
+    order_id SERIAL PRIMARY KEY,
+    customer_id INT,
+    product_name VARCHAR(100),
+    quantity INT,
+    FOREIGN KEY (customer_id) REFERENCES Customers(customer_id)
+);
+
+INSERT INTO Customers (name, email, address)
+VALUES ('John Doe', 'johndoe@example.com', '123 Main St'),
+       ('Jane Smith', 'janesmith@example.com', '456 Elm St');
+
+INSERT INTO Orders (customer_id, product_name, quantity)
+VALUES (1, 'Product A', 2),
+       (2, 'Product B', 1),
+       (1, 'Product C', 3);
+
+-- inner join      --------------------------
+SELECT *
+FROM Customers
+INNER JOIN Orders ON Customers.customer_id = Orders.customer_id;
+-- left join or left outer join
+SELECT *
+FROM Customers
+LEFT JOIN Orders ON Customers.customer_id = Orders.customer_id;
+-- right join or right outer join
+SELECT *
+FROM Customers
+RIGHT JOIN Orders ON Customers.customer_id = Orders.customer_id;
+-- full join or full outer join
+SELECT *
+FROM Customers
+FULL JOIN Orders ON Customers.customer_id = Orders.customer_id;
+-- cross join
+SELECT *
+FROM Customers
+CROSS JOIN Orders;
+-- self join
+SELECT c1.name AS customer_name, c2.name AS referred_by
+FROM Customers c1
+JOIN Customers c2 ON c1.referred_by = c2.customer_id;
+/*
+Note: The self join example assumes that there is a column named referred_by in the
+"Customers" table that stores the customer_id of the customer who referred them.
+*/
+
+--      Views      --------------------------
+/*
+  Materialized views are disk based and are updated periodically based upon the query definition.
+  Views are virtual only and run the query definition each time they are accessed.
+*/
+
+CREATE VIEW employee_view AS
+SELECT c.customer_id as id, c.name as name
+FROM Customers c
+RIGHT JOIN Orders ON c.customer_id = Orders.customer_id;
+
+SELECT * FROM employee_view;
+
+--      Aggregate functions      --------------------------
+-- count
+SELECT COUNT(*) FROM employees;
+-- sum
+SELECT SUM(quantity) FROM orders;
+-- avg
+SELECT AVG(age) FROM employees;
+-- min
+SELECT MIN(age) FROM employees;
+-- max
+SELECT MAX(age) FROM employees;
+-- group by
+SELECT department, AVG(age) FROM employees GROUP BY department;
+-- having
+SELECT department, AVG(age) FROM employees GROUP BY department HAVING MIN(age) > 24;
+-- string_agg
+SELECT department, STRING_AGG(name, ', ') FROM employees GROUP BY department;
+-- array_agg
+SELECT department, ARRAY_AGG(name) FROM employees GROUP BY department;
+
+--      Any and All      --------------------------
+/*
+  The ANY and ALL operators allow you to perform a comparison between a single column value and a range of other values.
+*/
+-- any | The ANY keyword is used to check if any of the values in an array match a condition.
+SELECT * FROM employees WHERE age > ANY (ARRAY[25, 29, 30]);
+
+-- all | The ALL keyword is used to check if all the values in an array satisfy a condition.
+SELECT * FROM employees WHERE age > ALL (ARRAY[22, 20, 21]);
+
+--       PL/pgSQL functions      --------------------------
+/*
+  PL/pgSQL is a procedural language specific to PostgreSQL that allows you to write functions, triggers, and other stored procedures.
+*/
+CREATE FUNCTION get_average_age_by_department(dept_name VARCHAR(50)) RETURNS NUMERIC AS $$
+DECLARE
+    total_age INT := 0;
+    employee_count INT := 0;
+    average_age NUMERIC := 0;
+BEGIN
+    SELECT SUM(age), COUNT(*) INTO total_age, employee_count FROM employees WHERE department = dept_name;
+
+    IF employee_count > 0 THEN
+        average_age := total_age::NUMERIC / employee_count;
+    END IF;
+
+    RETURN average_age;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT get_average_age_by_department('dep1');
